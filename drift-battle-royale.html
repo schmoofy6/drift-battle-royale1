@@ -1,0 +1,1371 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Drift Battle">
+<meta name="theme-color" content="#0a0a0f">
+<title>Drift Battle Royale</title>
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230a0a0f'/><text y='.9em' font-size='80' x='8'>🚗</text></svg>">
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import { getDatabase, ref, set, get, update, onValue, push, remove } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+
+  // ============================================================
+  // 🔧 FIREBASE CONFIG – Ersetze mit deinen eigenen Werten!
+  //    Firebase Console → Projekteinstellungen → Deine Apps
+  // ============================================================
+  const firebaseConfig = {
+    apiKey: "DEIN_API_KEY",
+    authDomain: "DEIN_PROJECT.firebaseapp.com",
+    databaseURL: "https://DEIN_PROJECT-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "DEIN_PROJECT_ID",
+    storageBucket: "DEIN_PROJECT.appspot.com",
+    messagingSenderId: "DEINE_SENDER_ID",
+    appId: "DEINE_APP_ID"
+  };
+
+  try {
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    window._db = db;
+    window._dbFns = { ref, set, get, update, onValue, push, remove };
+    window._firebaseReady = true;
+    window.dispatchEvent(new Event('firebase-ready'));
+  } catch(e) {
+    window._firebaseError = e.message;
+    window.dispatchEvent(new Event('firebase-error'));
+  }
+</script>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+/* ===================== VARIABLES ===================== */
+:root {
+  --bg:#0a0a0f; --bg2:#111118; --bg3:#1a1a24;
+  --surface:#16161f; --surface2:#1e1e2a;
+  --border:rgba(255,255,255,0.07); --border2:rgba(255,255,255,0.13);
+  --text:#f0f0f8; --text2:#9090a8; --text3:#5a5a70;
+  --accent:#ff3c5c; --accent2:#ff6b35; --accent-glow:rgba(255,60,92,0.3);
+  --green:#00e676; --blue:#40c4ff; --yellow:#ffd740;
+  --radius:16px; --radius-sm:10px;
+  --font-d:'Orbitron',sans-serif; --font-b:'Exo 2',sans-serif;
+  --shadow:0 8px 32px rgba(0,0,0,0.5);
+}
+[data-theme="light"] {
+  --bg:#f0f0f5; --bg2:#e8e8f0; --bg3:#dcdce8;
+  --surface:#fff; --surface2:#f5f5fc;
+  --border:rgba(0,0,0,0.08); --border2:rgba(0,0,0,0.15);
+  --text:#0a0a1a; --text2:#444460; --text3:#8888a0;
+  --accent-glow:rgba(255,60,92,0.15);
+  --shadow:0 8px 32px rgba(0,0,0,0.1);
+}
+
+/* ===================== RESET ===================== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font-b);background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;transition:background .3s,color .3s}
+
+/* ===================== SCREENS ===================== */
+.screen{position:fixed;inset:0;display:none;flex-direction:column;overflow-y:auto;background:var(--bg);z-index:10}
+.screen.active{display:flex}
+
+/* ===================== HEADER ===================== */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;padding-top:calc(16px + env(safe-area-inset-top));border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:100}
+.logo{font-family:var(--font-d);font-size:17px;font-weight:900;letter-spacing:2px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.theme-btn{background:var(--surface);border:1px solid var(--border2);border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;transition:all .2s}
+.theme-btn:active{transform:scale(.9)}
+
+/* ===================== CONTENT ===================== */
+.content{flex:1;padding:24px 20px;padding-bottom:calc(32px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:18px}
+
+/* ===================== HERO ===================== */
+.hero{text-align:center;padding:28px 0 8px}
+.hero-icon{font-size:68px;display:block;margin-bottom:10px;animation:float 3s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.hero h1{font-family:var(--font-d);font-size:26px;font-weight:900;letter-spacing:3px;line-height:1.1;margin-bottom:6px}
+.hero h1 span{background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero p{color:var(--text2);font-size:13px;line-height:1.6}
+
+/* ===================== BUTTONS ===================== */
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;padding:15px 20px;border-radius:var(--radius);border:none;font-family:var(--font-d);font-size:12px;font-weight:700;letter-spacing:2px;cursor:pointer;transition:all .18s;text-transform:uppercase;width:100%}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 4px 20px var(--accent-glow)}
+.btn-secondary{background:var(--surface);color:var(--text);border:1px solid var(--border2)}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}
+.btn-danger{background:rgba(255,60,92,.12);color:var(--accent);border:1px solid rgba(255,60,92,.3)}
+.btn-success{background:rgba(0,230,118,.12);color:var(--green);border:1px solid rgba(0,230,118,.3)}
+.btn-sm{padding:10px 14px;font-size:10px;border-radius:var(--radius-sm);width:auto}
+.btn-icon{font-size:17px}
+
+/* ===================== CARDS ===================== */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+.card-hdr{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+.card-title{font-family:var(--font-d);font-size:11px;font-weight:700;letter-spacing:2px;color:var(--text2);text-transform:uppercase}
+
+/* ===================== INPUTS ===================== */
+.inp-group{display:flex;flex-direction:column;gap:7px}
+.inp-label{font-size:11px;font-weight:600;color:var(--text2);letter-spacing:1px;text-transform:uppercase}
+.inp{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:13px 15px;color:var(--text);font-family:var(--font-b);font-size:16px;outline:none;transition:border-color .2s;width:100%}
+.inp:focus{border-color:var(--accent)}
+.inp::placeholder{color:var(--text3)}
+
+/* ===================== LOBBY CODE ===================== */
+.lobby-code{font-family:var(--font-d);font-size:44px;font-weight:900;letter-spacing:10px;text-align:center;color:var(--accent);text-shadow:0 0 40px var(--accent-glow);padding:12px 0}
+
+/* ===================== PLAYER LIST ===================== */
+.player-list{display:flex;flex-direction:column;gap:9px}
+.player-item{display:flex;align-items:center;gap:11px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px;transition:all .2s}
+.player-item.offline{opacity:.4}
+.p-avatar{width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid var(--border2);background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:19px;overflow:hidden;flex-shrink:0}
+.p-avatar img{width:100%;height:100%;object-fit:cover}
+.p-info{flex:1;min-width:0}
+.p-name{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.p-role{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}
+.rbadge{font-family:var(--font-d);font-size:9px;font-weight:700;letter-spacing:1px;padding:3px 7px;border-radius:20px;text-transform:uppercase}
+.rb-hider{background:rgba(64,196,255,.12);color:var(--blue);border:1px solid rgba(64,196,255,.3)}
+.rb-seeker{background:rgba(255,60,92,.12);color:var(--accent);border:1px solid rgba(255,60,92,.3)}
+.rb-host{background:rgba(255,215,64,.12);color:var(--yellow);border:1px solid rgba(255,215,64,.3)}
+.p-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+
+/* ===================== SETTINGS ===================== */
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--border)}
+.setting-row:last-child{border-bottom:none}
+.setting-label{font-size:13px;font-weight:500}
+.setting-desc{font-size:11px;color:var(--text2);margin-top:2px}
+.setting-ctrl{display:flex;align-items:center;gap:7px}
+.setting-val{font-family:var(--font-d);font-size:13px;font-weight:700;color:var(--accent);min-width:36px;text-align:right}
+.step-btn{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text);transition:all .15s}
+.step-btn:active{transform:scale(.88);background:var(--accent);color:#fff}
+
+/* ===================== PRESETS ===================== */
+.preset-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.preset-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:13px 8px;text-align:center;cursor:pointer;transition:all .18s}
+.preset-card.selected{border-color:var(--accent);background:rgba(255,60,92,.08)}
+.preset-card:active{transform:scale(.95)}
+.preset-icon{font-size:22px;margin-bottom:5px}
+.preset-name{font-size:10px;font-weight:600;color:var(--text2);font-family:var(--font-d)}
+.preset-desc{font-size:10px;color:var(--text3);margin-top:2px}
+
+/* ===================== PHOTO UPLOAD ===================== */
+.photo-upload{display:flex;flex-direction:column;align-items:center;gap:10px}
+.photo-preview{width:96px;height:96px;border-radius:50%;background:var(--bg2);border:2px dashed var(--border2);display:flex;align-items:center;justify-content:center;font-size:38px;overflow:hidden;cursor:pointer;transition:border-color .2s;position:relative}
+.photo-preview:active{border-color:var(--accent)}
+.photo-preview img{width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0}
+
+/* ===================== STATUS BAR ===================== */
+.status-bar{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;display:flex;align-items:center;gap:9px;font-size:13px;color:var(--text2)}
+
+/* ===================== DIVIDER ===================== */
+.divider{height:1px;background:var(--border);margin:4px 0}
+
+/* ===================== MAP SCREEN ===================== */
+#map-screen{position:fixed;inset:0;display:none;z-index:10}
+#map-screen.active{display:block}
+#map{position:absolute;inset:0;z-index:1}
+
+/* ===================== HUD ===================== */
+.map-hud{position:absolute;z-index:100;pointer-events:none}
+.hud-top{top:0;left:0;right:0;padding:14px 14px;padding-top:calc(14px + env(safe-area-inset-top));display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.hud-bottom{bottom:0;left:0;right:0;padding:12px 14px;padding-bottom:calc(12px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:9px;pointer-events:all}
+.hud-box{background:rgba(10,10,15,.88);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--border2);border-radius:var(--radius);padding:10px 14px;pointer-events:all}
+.timer-label{font-size:9px;color:var(--text2);letter-spacing:1px;text-transform:uppercase;text-align:center}
+.timer-val{font-family:var(--font-d);font-size:26px;font-weight:900;color:var(--text);line-height:1;text-align:center}
+.timer-val.danger{color:var(--accent);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.zone-label{font-size:9px;color:var(--text2);text-align:center;letter-spacing:1px;text-transform:uppercase}
+.zone-val{font-family:var(--font-d);font-size:15px;font-weight:700;color:var(--blue);text-align:center}
+.hud-actions{display:flex;gap:9px}
+
+/* ===================== ALERT BANNER ===================== */
+.alert-banner{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--accent);color:#fff;font-family:var(--font-d);font-size:13px;font-weight:700;letter-spacing:2px;padding:13px 24px;border-radius:var(--radius);text-align:center;z-index:200;box-shadow:0 0 50px rgba(255,60,92,.6);display:none;animation:alertIn .3s ease-out;max-width:280px;line-height:1.4}
+@keyframes alertIn{from{transform:translate(-50%,-50%) scale(.8);opacity:0}to{transform:translate(-50%,-50%) scale(1);opacity:1}}
+
+/* ===================== HIDE PHASE BANNER ===================== */
+.hide-banner{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(10,10,15,.92);backdrop-filter:blur(16px);border:2px solid var(--blue);border-radius:var(--radius);padding:22px 28px;text-align:center;z-index:180;pointer-events:none;display:none;box-shadow:0 0 40px rgba(64,196,255,.25);min-width:200px}
+.hide-banner.show{display:block}
+.hide-title{font-family:var(--font-d);font-size:10px;letter-spacing:3px;color:var(--blue);margin-bottom:6px}
+.hide-count{font-family:var(--font-d);font-size:52px;font-weight:900;color:var(--text);line-height:1}
+.hide-sub{font-size:11px;color:var(--text2);margin-top:5px}
+
+/* ===================== SEEKER LOCK ===================== */
+.seeker-lock{position:absolute;inset:0;background:rgba(10,10,15,.88);backdrop-filter:blur(10px);z-index:170;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+.seeker-lock.show{display:flex}
+.sl-icon{font-size:58px}
+.sl-title{font-family:var(--font-d);font-size:12px;letter-spacing:3px;color:var(--accent)}
+.sl-timer{font-family:var(--font-d);font-size:54px;font-weight:900;color:var(--text)}
+.sl-sub{font-size:13px;color:var(--text2);text-align:center;max-width:220px;line-height:1.5}
+
+/* ===================== CHAT PANEL ===================== */
+.chat-panel{position:absolute;bottom:0;left:0;right:0;height:56%;background:rgba(10,10,15,.96);backdrop-filter:blur(20px);border-top:1px solid var(--border2);border-radius:20px 20px 0 0;z-index:150;display:none;flex-direction:column;padding-bottom:env(safe-area-inset-bottom);transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
+.chat-panel.open{display:flex;transform:translateY(0)}
+.chat-handle{width:38px;height:4px;background:var(--border2);border-radius:2px;margin:11px auto 7px;cursor:grab}
+.chat-hdr{padding:0 15px 11px;font-family:var(--font-d);font-size:11px;letter-spacing:2px;color:var(--text2);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.chat-msgs{flex:1;overflow-y:auto;padding:11px 14px;display:flex;flex-direction:column;gap:8px}
+.chat-msg{display:flex;gap:8px;align-items:flex-start}
+.chat-msg.own{flex-direction:row-reverse}
+.cm-avatar{width:27px;height:27px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;overflow:hidden}
+.cm-avatar img{width:100%;height:100%;object-fit:cover}
+.cm-body{flex:1}
+.cm-name{font-size:10px;font-weight:600;color:var(--text2);margin-bottom:2px}
+.cm-text{font-size:13px;background:var(--surface);border-radius:0 9px 9px 9px;padding:7px 11px;display:inline-block;max-width:100%;word-break:break-word}
+.chat-msg.own .cm-body{display:flex;flex-direction:column;align-items:flex-end}
+.chat-msg.own .cm-text{background:var(--accent);color:#fff;border-radius:9px 0 9px 9px}
+.chat-inp-row{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border)}
+.chat-inp{flex:1;background:var(--surface);border:1px solid var(--border2);border-radius:22px;padding:9px 14px;color:var(--text);font-family:var(--font-b);font-size:14px;outline:none}
+.chat-send{background:var(--accent);border:none;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;flex-shrink:0}
+
+/* ===================== MODAL ===================== */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(8px);z-index:9000;display:flex;align-items:center;justify-content:center;padding:24px}
+.modal-box{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:26px;max-width:300px;width:100%;text-align:center}
+.modal-icon{font-size:46px;margin-bottom:10px}
+.modal-title{font-family:var(--font-d);font-size:13px;letter-spacing:2px;margin-bottom:7px}
+.modal-sub{font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:22px}
+.modal-btns{display:flex;gap:10px}
+
+/* ===================== TOAST ===================== */
+.toast{position:fixed;top:calc(18px + env(safe-area-inset-top));left:50%;transform:translateX(-50%) translateY(-80px);background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:11px 18px;font-size:13px;font-weight:500;z-index:9999;transition:transform .3s cubic-bezier(.4,0,.2,1);white-space:nowrap;box-shadow:var(--shadow);max-width:90vw}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.success{border-color:var(--green);color:var(--green)}
+.toast.error{border-color:var(--accent);color:var(--accent)}
+
+/* ===================== LOADING ===================== */
+.loading-overlay{position:fixed;inset:0;background:var(--bg);z-index:9998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px}
+.spinner{width:46px;height:46px;border:3px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-family:var(--font-d);font-size:11px;letter-spacing:2px;color:var(--text2)}
+
+/* ===================== INFECTED OVERLAY ===================== */
+.infected-overlay{position:fixed;inset:0;background:rgba(255,60,92,.4);z-index:9990;display:none;pointer-events:none}
+@keyframes infectFlash{0%{opacity:0}20%{opacity:1}100%{opacity:0}}
+
+/* ===================== GAMEOVER ===================== */
+.go-card{text-align:center;padding:36px 18px}
+.go-icon{font-size:72px;margin-bottom:14px}
+.go-title{font-family:var(--font-d);font-size:26px;font-weight:900;letter-spacing:3px;margin-bottom:7px}
+.go-sub{color:var(--text2);font-size:14px;line-height:1.6}
+
+/* ===================== INSTALL HINT ===================== */
+.install-hint{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:11px 14px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:10px;line-height:1.5}
+
+/* ===================== LEAFLET OVERRIDES ===================== */
+.leaflet-tile-pane{filter:brightness(.88) saturate(.9)}
+[data-theme="light"] .leaflet-tile-pane{filter:none}
+.leaflet-control-attribution,.leaflet-control-zoom{display:none!important}
+.leaflet-popup-content-wrapper{background:var(--surface)!important;color:var(--text)!important;border:1px solid var(--border2)!important;border-radius:var(--radius-sm)!important;box-shadow:var(--shadow)!important;font-family:var(--font-b)!important}
+.leaflet-popup-tip{background:var(--surface)!important}
+
+/* ===================== RADAR PULSE ===================== */
+@keyframes radarPulse{0%{transform:translate(-50%,-50%) scale(1);opacity:.9}70%{transform:translate(-50%,-50%) scale(3.2);opacity:0}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}
+</style>
+</head>
+<body data-theme="dark">
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- INFECTED OVERLAY -->
+<div class="infected-overlay" id="infected-overlay"></div>
+
+<!-- LOADING -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loading-text">VERBINDE...</div>
+</div>
+
+<!-- ==================== HOME ==================== -->
+<div class="screen" id="screen-home">
+  <div class="hdr">
+    <div class="logo">DBR</div>
+    <button class="theme-btn" onclick="toggleTheme()" id="theme-btn">🌙</button>
+  </div>
+  <div class="content">
+    <div class="hero">
+      <span class="hero-icon">🚗</span>
+      <h1>DRIFT<br><span>BATTLE</span><br>ROYALE</h1>
+      <p style="margin-top:10px">GPS Versteckspiel für Autos.<br>Kein Download nötig — öffne den Link, fertig.</p>
+    </div>
+
+    <button class="btn btn-primary" onclick="showScreen('screen-create')">
+      <span class="btn-icon">🏁</span> LOBBY ERSTELLEN
+    </button>
+    <button class="btn btn-secondary" onclick="showScreen('screen-join')">
+      <span class="btn-icon">🔗</span> LOBBY BEITRETEN
+    </button>
+
+    <div class="install-hint" id="install-hint" style="display:none">
+      <span style="font-size:22px;flex-shrink:0">📲</span>
+      <div>Für bestes GPS-Erlebnis: Tippe auf <b>Teilen ↑</b> → <b>Zum Homescreen hinzufügen</b></div>
+    </div>
+
+    <div class="card" style="text-align:center">
+      <div style="font-size:11px;color:var(--text2);letter-spacing:1px;margin-bottom:14px;font-family:var(--font-d)">WIE ES FUNKTIONIERT</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:12px">
+        <div><div style="font-size:26px;margin-bottom:5px">🔍</div><div style="font-weight:600">Fänger</div><div style="color:var(--text2);margin-top:3px;font-size:11px">Findet & infiziert Verstecker</div></div>
+        <div><div style="font-size:26px;margin-bottom:5px">🕵️</div><div style="font-weight:600">Verstecker</div><div style="color:var(--text2);margin-top:3px;font-size:11px">Versteck dich, bleib still</div></div>
+        <div><div style="font-size:26px;margin-bottom:5px">⚡</div><div style="font-weight:600">Zone</div><div style="color:var(--text2);margin-top:3px;font-size:11px">Schrumpft mit der Zeit</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== CREATE ==================== -->
+<div class="screen" id="screen-create">
+  <div class="hdr">
+    <button class="btn btn-ghost btn-sm" onclick="showScreen('screen-home')">← Zurück</button>
+    <div class="logo">ERSTELLEN</div>
+    <div style="width:70px"></div>
+  </div>
+  <div class="content">
+    <div class="card">
+      <div class="card-hdr"><span>👤</span><div class="card-title">Dein Profil</div></div>
+      <div class="photo-upload">
+        <div class="photo-preview" id="create-photo-preview" onclick="document.getElementById('create-photo-input').click()">
+          <span id="create-photo-emoji">🚗</span>
+          <img id="create-photo-img" src="" alt="" style="display:none">
+        </div>
+        <div style="font-size:11px;color:var(--text2)">Fahrzeugfoto tippen</div>
+        <input type="file" id="create-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handlePhoto(this,'create')">
+      </div>
+      <div class="inp-group" style="margin-top:14px">
+        <label class="inp-label">Dein Name</label>
+        <input class="inp" id="create-name" placeholder="Max Mustermann" type="text" maxlength="20">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr"><span>⚙️</span><div class="card-title">Spieleinstellungen</div></div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:9px;letter-spacing:1px;font-family:var(--font-d)">SCHNELLPROFILE</div>
+      <div class="preset-grid" id="preset-grid">
+        <div class="preset-card selected" onclick="applyPreset('small',this)"><div class="preset-icon">🏙️</div><div class="preset-name">KLEIN</div><div class="preset-desc">500m · 15min</div></div>
+        <div class="preset-card" onclick="applyPreset('medium',this)"><div class="preset-icon">🌆</div><div class="preset-name">MITTEL</div><div class="preset-desc">1km · 25min</div></div>
+        <div class="preset-card" onclick="applyPreset('large',this)"><div class="preset-icon">🗺️</div><div class="preset-name">GROSS</div><div class="preset-desc">2km · 40min</div></div>
+      </div>
+      <div class="divider" style="margin:14px 0"></div>
+
+      <div class="setting-row">
+        <div><div class="setting-label">Spieldauer</div><div class="setting-desc">Gesamtdauer der Runde</div></div>
+        <div class="setting-ctrl">
+          <button class="step-btn" onclick="adjSetting('duration',-5)">−</button>
+          <div class="setting-val" id="val-duration">15</div>
+          <span style="font-size:10px;color:var(--text2)">min</span>
+          <button class="step-btn" onclick="adjSetting('duration',5)">+</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Startradius</div><div class="setting-desc">Anfangsgröße der Zone</div></div>
+        <div class="setting-ctrl">
+          <button class="step-btn" onclick="adjSetting('radius',-100)">−</button>
+          <div class="setting-val" id="val-radius">500</div>
+          <span style="font-size:10px;color:var(--text2)">m</span>
+          <button class="step-btn" onclick="adjSetting('radius',100)">+</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Bewegungstoleranz</div><div class="setting-desc">Max. Meter ohne Alarm</div></div>
+        <div class="setting-ctrl">
+          <button class="step-btn" onclick="adjSetting('moveLimit',-5)">−</button>
+          <div class="setting-val" id="val-moveLimit">20</div>
+          <span style="font-size:10px;color:var(--text2)">m</span>
+          <button class="step-btn" onclick="adjSetting('moveLimit',5)">+</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Zonenwarnung</div><div class="setting-desc">Sekunden außerhalb bis sichtbar</div></div>
+        <div class="setting-ctrl">
+          <button class="step-btn" onclick="adjSetting('zoneWarn',-5)">−</button>
+          <div class="setting-val" id="val-zoneWarn">10</div>
+          <span style="font-size:10px;color:var(--text2)">s</span>
+          <button class="step-btn" onclick="adjSetting('zoneWarn',5)">+</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Versteckphase</div><div class="setting-desc">Sekunden vor Jagdbeginn</div></div>
+        <div class="setting-ctrl">
+          <button class="step-btn" onclick="adjSetting('hideTime',-30)">−</button>
+          <div class="setting-val" id="val-hideTime">120</div>
+          <span style="font-size:10px;color:var(--text2)">s</span>
+          <button class="step-btn" onclick="adjSetting('hideTime',30)">+</button>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" onclick="createLobby()">
+      <span class="btn-icon">🚀</span> LOBBY ERSTELLEN
+    </button>
+  </div>
+</div>
+
+<!-- ==================== JOIN ==================== -->
+<div class="screen" id="screen-join">
+  <div class="hdr">
+    <button class="btn btn-ghost btn-sm" onclick="showScreen('screen-home')">← Zurück</button>
+    <div class="logo">BEITRETEN</div>
+    <div style="width:70px"></div>
+  </div>
+  <div class="content">
+    <div class="card">
+      <div class="card-hdr"><span>👤</span><div class="card-title">Dein Profil</div></div>
+      <div class="photo-upload">
+        <div class="photo-preview" id="join-photo-preview" onclick="document.getElementById('join-photo-input').click()">
+          <span id="join-photo-emoji">🚗</span>
+          <img id="join-photo-img" src="" alt="" style="display:none">
+        </div>
+        <div style="font-size:11px;color:var(--text2)">Fahrzeugfoto tippen</div>
+        <input type="file" id="join-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handlePhoto(this,'join')">
+      </div>
+      <div class="inp-group" style="margin-top:14px">
+        <label class="inp-label">Dein Name</label>
+        <input class="inp" id="join-name" placeholder="Max Mustermann" type="text" maxlength="20">
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span>🔑</span><div class="card-title">Lobby Code</div></div>
+      <input class="inp" id="join-code" placeholder="ABC123" maxlength="6" style="text-align:center;font-family:var(--font-d);font-size:26px;letter-spacing:8px;text-transform:uppercase">
+    </div>
+    <button class="btn btn-primary" onclick="joinLobby()">
+      <span class="btn-icon">🚗</span> BEITRETEN
+    </button>
+  </div>
+</div>
+
+<!-- ==================== LOBBY ==================== -->
+<div class="screen" id="screen-lobby">
+  <div class="hdr">
+    <button class="btn btn-ghost btn-sm" onclick="leaveLobby()">← Verlassen</button>
+    <div class="logo">LOBBY</div>
+    <div style="width:70px"></div>
+  </div>
+  <div class="content">
+    <div class="card" style="text-align:center">
+      <div class="card-title" style="margin-bottom:6px">LOBBY CODE</div>
+      <div class="lobby-code" id="lobby-code-display">------</div>
+      <button class="btn btn-ghost btn-sm" style="margin:6px auto 0" onclick="copyCode()">📋 Code kopieren</button>
+    </div>
+
+    <div class="status-bar">
+      <div class="p-dot" id="lobby-status-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></div>
+      <div id="lobby-status-text">Warte auf Spieler...</div>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr"><span>👥</span><div class="card-title">Spieler (<span id="player-count">0</span>)</div></div>
+      <div class="player-list" id="player-list"></div>
+    </div>
+
+    <div id="host-controls" style="display:none">
+      <button class="btn btn-primary" onclick="startGame()">
+        <span class="btn-icon">🏁</span> SPIEL STARTEN
+      </button>
+    </div>
+    <div id="guest-waiting" style="display:none;text-align:center;color:var(--text2);font-size:13px">
+      ⏳ Warte auf den Host...
+    </div>
+  </div>
+</div>
+
+<!-- ==================== MAP ==================== -->
+<div class="screen" id="map-screen">
+  <div id="map"></div>
+
+  <!-- HUD TOP -->
+  <div class="map-hud hud-top">
+    <div class="hud-box">
+      <div class="timer-label">ZEIT</div>
+      <div class="timer-val" id="hud-timer">--:--</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="hud-box" id="hud-role-badge"></div>
+      <div class="hud-box">
+        <div class="zone-label">ZONE</div>
+        <div class="zone-val" id="hud-zone">---m</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HUD BOTTOM -->
+  <div class="map-hud hud-bottom">
+    <div class="hud-box" id="hud-my-status" style="font-size:12px;color:var(--text2)"></div>
+    <div class="hud-actions">
+      <button class="btn btn-secondary" style="flex:1" onclick="toggleChat()">
+        💬 CHAT
+        <span id="chat-badge" style="background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;display:none;margin-left:2px">0</span>
+      </button>
+      <button class="btn btn-danger" style="flex:1;display:none" id="btn-caught" onclick="showCaughtModal()">🚨 GEFANGEN!</button>
+      <button class="btn btn-success" style="flex:1;display:none" id="btn-found" onclick="confirmFound()">✅ GEFUNDEN!</button>
+    </div>
+    <div id="host-game-controls" style="display:none">
+      <button class="btn btn-danger btn-sm" onclick="endGame(true)" style="width:100%">🛑 Spiel beenden</button>
+    </div>
+  </div>
+
+  <!-- Alert banner -->
+  <div class="alert-banner" id="alert-banner"></div>
+
+  <!-- Hide phase (for hiders) -->
+  <div class="hide-banner" id="hide-banner">
+    <div class="hide-title">VERSTECKPHASE</div>
+    <div class="hide-count" id="hide-count">--</div>
+    <div class="hide-sub">Sekunden zum Verstecken</div>
+  </div>
+
+  <!-- Seeker lock (for seeker during hide phase) -->
+  <div class="seeker-lock" id="seeker-lock">
+    <div class="sl-icon">🔒</div>
+    <div class="sl-title">WARTEZEIT</div>
+    <div class="sl-timer" id="sl-timer">--</div>
+    <div class="sl-sub">Verstecker haben Zeit sich zu verstecken. Die Jagd beginnt gleich!</div>
+  </div>
+
+  <!-- Chat panel -->
+  <div class="chat-panel" id="chat-panel">
+    <div class="chat-handle" id="chat-handle"></div>
+    <div class="chat-hdr">TEAM CHAT</div>
+    <div class="chat-msgs" id="chat-msgs"></div>
+    <div class="chat-inp-row">
+      <input class="chat-inp" id="chat-inp" placeholder="Nachricht..." maxlength="150" onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="chat-send" onclick="sendChat()">➤</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== GAME OVER ==================== -->
+<div class="screen" id="screen-gameover">
+  <div class="hdr">
+    <div class="logo">DBR</div>
+    <button class="theme-btn" onclick="toggleTheme()">🌙</button>
+  </div>
+  <div class="content">
+    <div class="card go-card">
+      <div class="go-icon" id="go-icon">🏆</div>
+      <div class="go-title" id="go-title">GAME OVER</div>
+      <div class="go-sub" id="go-sub"></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span>📊</span><div class="card-title">Ergebnisse</div></div>
+      <div class="player-list" id="go-stats"></div>
+    </div>
+    <button class="btn btn-primary" onclick="resetGame();showScreen('screen-home')">
+      <span class="btn-icon">🔄</span> NEUES SPIEL
+    </button>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+const G = {
+  theme: 'dark',
+  playerId: null, playerName: '', playerPhoto: null,
+  lobbyCode: null, isHost: false, role: null,
+  settings: { duration:15, radius:500, moveLimit:20, zoneWarn:10, hideTime:120 },
+  gameActive: false, gameEndGuard: false,
+  startTime: null,
+  map: null, tileDark: null, tileLight: null,
+  myMarker: null, playerMarkers: {}, markerData: {},
+  zoneCircle: null, zoneOuter: null,
+  currentZoneRadius: 500, zoneCenter: null,
+  myPos: null,
+  watchId: null,
+  timerIv: null, zoneIv: null, hideIv: null, pingIv: null,
+  listeners: [],
+  chatOpen: false, unreadChat: 0, chatMsgs: [],
+  infected: false, wakeLock: null,
+  visibleSet: new Set(),
+};
+
+const PRESETS = {
+  small:  {duration:15,radius:500,moveLimit:20,zoneWarn:10,hideTime:120},
+  medium: {duration:25,radius:1000,moveLimit:20,zoneWarn:10,hideTime:180},
+  large:  {duration:40,radius:2000,moveLimit:30,zoneWarn:15,hideTime:240},
+};
+
+const COLORS = ['#ff3c5c','#40c4ff','#00e676','#ffd740','#ea80fc','#ff6d00','#64ffda','#ff80ab'];
+
+// ============================================================
+// FIREBASE
+// ============================================================
+const db = () => window._db;
+const fn = () => window._dbFns;
+const lRef = (p='') => fn().ref(db(), `lobbies/${G.lobbyCode}${p?'/'+p:''}`);
+
+function addListener(r, cb) {
+  const u = fn().onValue(r, cb);
+  G.listeners.push(u);
+  return u;
+}
+function clearListeners() { G.listeners.forEach(u=>{try{u()}catch(e){}});G.listeners=[]; }
+
+// ============================================================
+// UTILS
+// ============================================================
+function genCode() {
+  const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:6},()=>c[Math.floor(Math.random()*c.length)]).join('');
+}
+function genId() { return Math.random().toString(36).slice(2)+Date.now().toString(36); }
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  const el = document.getElementById(id);
+  if (el) { el.classList.add('active'); el.scrollTop=0; }
+}
+
+function showLoad(v, txt='VERBINDE...') {
+  document.getElementById('loading-overlay').style.display = v?'flex':'none';
+  document.getElementById('loading-text').textContent = txt;
+}
+
+function toast(msg, type='info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = `toast ${type} show`;
+  clearTimeout(el._t); el._t = setTimeout(()=>el.classList.remove('show'), 2800);
+}
+
+function toggleTheme() {
+  G.theme = G.theme==='dark'?'light':'dark';
+  document.body.setAttribute('data-theme', G.theme);
+  document.querySelectorAll('.theme-btn').forEach(b=>b.textContent=G.theme==='dark'?'🌙':'☀️');
+  if (G.tileDark && G.tileLight) {
+    G.tileDark.setOpacity(G.theme==='dark'?1:0);
+    G.tileLight.setOpacity(G.theme==='light'?1:0);
+  }
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function haversine(la1,lo1,la2,lo2) {
+  const R=6371000,dLa=(la2-la1)*Math.PI/180,dLo=(lo2-lo1)*Math.PI/180;
+  const a=Math.sin(dLa/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLo/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function fmtTime(s) {
+  const m=Math.floor(s/60),ss=Math.floor(s%60);
+  return `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+}
+
+// ============================================================
+// PHOTO
+// ============================================================
+function handlePhoto(input, ctx) {
+  const file = input.files[0]; if(!file) return;
+  const r = new FileReader();
+  r.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas'); cv.width=cv.height=160;
+      const c = cv.getContext('2d');
+      const m = Math.min(img.width,img.height);
+      c.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,160,160);
+      const d = cv.toDataURL('image/jpeg',.75);
+      G.playerPhoto = d;
+      const em = document.getElementById(`${ctx}-photo-emoji`);
+      const im = document.getElementById(`${ctx}-photo-img`);
+      if(em) em.style.display='none';
+      im.src=d; im.style.display='block';
+    };
+    img.src = e.target.result;
+  };
+  r.readAsDataURL(file);
+}
+
+// ============================================================
+// SETTINGS
+// ============================================================
+function adjSetting(k, d) {
+  const lim = {duration:[5,60],radius:[100,5000],moveLimit:[10,100],zoneWarn:[5,60],hideTime:[30,600]};
+  const [mn,mx] = lim[k];
+  G.settings[k] = Math.min(mx, Math.max(mn, G.settings[k]+d));
+  document.getElementById(`val-${k}`).textContent = G.settings[k];
+  document.querySelectorAll('.preset-card').forEach(c=>c.classList.remove('selected'));
+}
+
+function applyPreset(name, el) {
+  const p = PRESETS[name]; Object.assign(G.settings, p);
+  Object.keys(p).forEach(k=>{ const e=document.getElementById(`val-${k}`); if(e) e.textContent=p[k]; });
+  document.querySelectorAll('.preset-card').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+// ============================================================
+// CREATE LOBBY
+// ============================================================
+async function createLobby() {
+  const name = document.getElementById('create-name').value.trim();
+  if (!name) { toast('Bitte Namen eingeben!','error'); return; }
+  if (!window._firebaseReady) { toast('Firebase nicht verbunden! Config prüfen.','error'); return; }
+
+  G.playerId=genId(); G.playerName=name; G.isHost=true; G.lobbyCode=genCode();
+  showLoad(true,'ERSTELLE LOBBY...');
+  try {
+    await fn().set(lRef(), {
+      code: G.lobbyCode, host: G.playerId, status: 'waiting',
+      settings: G.settings, createdAt: Date.now(),
+      players: { [G.playerId]: makePlayer(true) }
+    });
+    showLoad(false);
+    enterLobby();
+  } catch(e) { showLoad(false); toast('Firebase Fehler: '+e.message,'error'); }
+}
+
+// ============================================================
+// JOIN LOBBY
+// ============================================================
+async function joinLobby() {
+  const name = document.getElementById('join-name').value.trim();
+  const code = document.getElementById('join-code').value.trim().toUpperCase();
+  if (!name) { toast('Bitte Namen eingeben!','error'); return; }
+  if (code.length!==6) { toast('6-stelligen Code eingeben!','error'); return; }
+  if (!window._firebaseReady) { toast('Firebase nicht verbunden!','error'); return; }
+
+  G.playerId=genId(); G.playerName=name; G.isHost=false; G.lobbyCode=code;
+  showLoad(true,'SUCHE LOBBY...');
+  try {
+    const snap = await fn().get(lRef());
+    if (!snap.exists()) { showLoad(false); toast('Lobby nicht gefunden!','error'); return; }
+    const data = snap.val();
+    if (data.status==='playing') { showLoad(false); toast('Spiel bereits gestartet!','error'); return; }
+    if (data.status==='ended') { showLoad(false); toast('Spiel bereits beendet!','error'); return; }
+
+    await fn().update(lRef(`players/${G.playerId}`), makePlayer(false));
+    G.settings = data.settings;
+    showLoad(false);
+    enterLobby();
+  } catch(e) { showLoad(false); toast('Fehler: '+e.message,'error'); }
+}
+
+function makePlayer(isHost) {
+  return { id:G.playerId, name:G.playerName, photo:G.playerPhoto||null,
+    isHost, role:'hider', online:true, lastPing:Date.now(), joinedAt:Date.now() };
+}
+
+// ============================================================
+// LOBBY
+// ============================================================
+function enterLobby() {
+  showScreen('screen-lobby');
+  document.getElementById('lobby-code-display').textContent = G.lobbyCode;
+  document.getElementById('host-controls').style.display = G.isHost?'block':'none';
+  document.getElementById('guest-waiting').style.display = G.isHost?'none':'block';
+  startPing();
+  addListener(lRef('players'), snap => renderPlayerList(snap.val()||{}));
+  addListener(lRef('status'), snap => {
+    const s = snap.val();
+    if (s==='playing') startClientGame();
+    else if (s==='ended') doGameOver();
+  });
+}
+
+function renderPlayerList(players) {
+  const arr = Object.values(players).sort((a,b)=>a.joinedAt-b.joinedAt);
+  document.getElementById('player-count').textContent = arr.length;
+  const list = document.getElementById('player-list');
+  list.innerHTML = arr.map((p,i) => {
+    const color = COLORS[i%COLORS.length];
+    const now = Date.now();
+    const offline = p.lastPing && (now-p.lastPing>35000);
+    const dotColor = offline?'var(--accent)':'var(--green)';
+    return `<div class="player-item${offline?' offline':''}">
+      <div class="p-avatar" style="border-color:${color}">
+        ${p.photo?`<img src="${p.photo}" alt="">`:`<span style="font-size:19px">🚗</span>`}
+      </div>
+      <div class="p-info">
+        <div class="p-name">${esc(p.name)}${p.id===G.playerId?' <span style="color:var(--text3);font-size:10px">(Du)</span>':''}</div>
+        <div class="p-role">
+          ${p.isHost?'<span class="rbadge rb-host">HOST</span>':''}
+          <span class="rbadge ${p.role==='seeker'?'rb-seeker':'rb-hider'}">${p.role==='seeker'?'FÄNGER':'VERSTECKER'}</span>
+        </div>
+      </div>
+      <div class="p-dot" style="background:${dotColor};box-shadow:0 0 6px ${dotColor}"></div>
+    </div>`;
+  }).join('');
+}
+
+function copyCode() {
+  const txt = G.lobbyCode;
+  if (navigator.clipboard) navigator.clipboard.writeText(txt).then(()=>toast('Code kopiert! 📋','success')).catch(()=>toast(`Code: ${txt}`));
+  else toast(`Dein Code: ${txt}`);
+}
+
+async function leaveLobby() {
+  clearInterval(G.pingIv); clearListeners();
+  try { await fn().remove(lRef(`players/${G.playerId}`)); } catch(e) {}
+  resetGame(); showScreen('screen-home');
+}
+
+// ============================================================
+// PING
+// ============================================================
+function startPing() {
+  clearInterval(G.pingIv);
+  G.pingIv = setInterval(async()=>{
+    if (!G.lobbyCode||!G.playerId) return;
+    try { await fn().update(lRef(`players/${G.playerId}`),{lastPing:Date.now(),online:true}); } catch(e){}
+  }, 14000);
+}
+
+// ============================================================
+// START GAME (HOST)
+// ============================================================
+async function startGame() {
+  const snap = await fn().get(lRef('players'));
+  const players = snap.val()||{};
+  const ids = Object.keys(players);
+  if (ids.length<2) { toast('Mindestens 2 Spieler benötigt!','error'); return; }
+
+  showLoad(true,'GPS ABRUFEN...');
+  const pos = await getGPS();
+  if (!pos) { showLoad(false); toast('GPS nicht verfügbar! Bitte erlauben.','error'); return; }
+
+  const seekerId = ids[Math.floor(Math.random()*ids.length)];
+  const updates = {};
+  ids.forEach(id=>{ updates[`players/${id}/role`]=id===seekerId?'seeker':'hider'; });
+  updates.status = 'playing';
+  updates.startTime = Date.now();
+  updates.seekerId = seekerId;
+  updates.zoneCenter = { lat:pos.coords.latitude, lng:pos.coords.longitude };
+  updates.currentRadius = G.settings.radius;
+
+  await fn().update(lRef(), updates);
+  showLoad(false);
+}
+
+function getGPS() {
+  return new Promise(res=>{
+    if (!navigator.geolocation) { res(null); return; }
+    navigator.geolocation.getCurrentPosition(res, ()=>res(null), {enableHighAccuracy:true,timeout:12000,maximumAge:0});
+  });
+}
+
+// ============================================================
+// CLIENT GAME START
+// ============================================================
+async function startClientGame() {
+  if (G.gameActive) return;
+  clearListeners();
+
+  const snap = await fn().get(lRef());
+  if (!snap.exists()) return;
+  const data = snap.val();
+
+  G.role = data.players[G.playerId]?.role||'hider';
+  G.settings = data.settings;
+  G.startTime = data.startTime;
+  G.zoneCenter = data.zoneCenter;
+  G.currentZoneRadius = data.currentRadius||data.settings.radius;
+  G.gameActive = true;
+  G.gameEndGuard = false;
+  G.infected = false;
+
+  try { if(navigator.wakeLock) G.wakeLock=await navigator.wakeLock.request('screen'); } catch(e){}
+
+  showScreen('map-screen');
+  initMap();
+  updateHUD();
+  startGPS();
+  startGameListeners();
+  startTimers();
+  startHidePhase();
+
+  showAlert(G.role==='seeker'?'🔍 DU BIST DER FÄNGER!':'🕵️ VERSTECK DICH!', 3500);
+}
+
+// ============================================================
+// MAP INIT
+// ============================================================
+function initMap() {
+  if (G.map) { try{G.map.remove();}catch(e){} G.map=null; }
+  const c = [G.zoneCenter.lat, G.zoneCenter.lng];
+
+  G.map = L.map('map',{zoomControl:false,attributionControl:false,tap:true}).setView(c,14);
+
+  G.tileDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    {maxZoom:19,subdomains:'abcd',opacity:G.theme==='dark'?1:0}).addTo(G.map);
+  G.tileLight = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    {maxZoom:19,subdomains:'abcd',opacity:G.theme==='light'?1:0}).addTo(G.map);
+
+  // Outer dim overlay (outside zone darker)
+  G.zoneOuter = L.circle(c,{radius:50000,color:'transparent',fillColor:'#000',fillOpacity:.3,interactive:false}).addTo(G.map);
+
+  // Zone ring
+  G.zoneCircle = L.circle(c,{radius:G.currentZoneRadius,color:'#40c4ff',fillColor:'#40c4ff',fillOpacity:.04,weight:2,dashArray:'10,6',interactive:false}).addTo(G.map);
+
+  // Custom zoom
+  const zCtrl = L.control({position:'topright'});
+  zCtrl.onAdd = () => {
+    const d = L.DomUtil.create('div','');
+    d.style.cssText='display:flex;flex-direction:column;gap:6px;margin-top:150px;margin-right:2px';
+    d.innerHTML=`
+      <button onclick="G.map.zoomIn()" style="background:rgba(10,10,15,.88);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.13);border-radius:10px;width:38px;height:38px;color:#f0f0f8;font-size:20px;cursor:pointer">+</button>
+      <button onclick="G.map.zoomOut()" style="background:rgba(10,10,15,.88);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.13);border-radius:10px;width:38px;height:38px;color:#f0f0f8;font-size:20px;cursor:pointer">−</button>
+      <button onclick="centerMe()" style="background:rgba(10,10,15,.88);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.13);border-radius:10px;width:38px;height:38px;font-size:17px;cursor:pointer" title="Meinen Standort">📍</button>`;
+    L.DomEvent.disableClickPropagation(d);
+    return d;
+  };
+  zCtrl.addTo(G.map);
+}
+
+function centerMe() { if(G.myPos&&G.map) G.map.setView([G.myPos.lat,G.myPos.lng],16); }
+
+// ============================================================
+// MARKER FACTORY
+// ============================================================
+function mkIcon(photo, color, isMe, radar) {
+  const sz = isMe?46:38, b = isMe?3:2;
+  const glow = isMe?`box-shadow:0 0 0 ${b}px ${color},0 0 16px ${color}55`:
+                     `box-shadow:0 0 8px ${color}44`;
+  const inner = photo
+    ? `<img src="${photo}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block">`
+    : `<span style="font-size:${isMe?20:15}px;line-height:1">🚗</span>`;
+  const ring = radar
+    ? `<div style="position:absolute;top:50%;left:50%;width:${sz}px;height:${sz}px;border-radius:50%;border:2px solid ${color};animation:radarPulse 1.8s ease-out infinite;pointer-events:none"></div>`
+    : '';
+  return L.divIcon({
+    html:`<div style="position:relative;width:${sz}px;height:${sz}px">${ring}<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:var(--bg2,#111118);border:${b}px solid ${color};${glow};display:flex;align-items:center;justify-content:center;overflow:hidden">${inner}</div></div>`,
+    iconSize:[sz,sz], iconAnchor:[sz/2,sz/2], className:''
+  });
+}
+
+// ============================================================
+// GPS TRACKING
+// ============================================================
+let zoneExitTm=null, movCooldown=false;
+
+function startGPS() {
+  if (!navigator.geolocation) { toast('Kein GPS verfügbar!','error'); return; }
+  G.watchId = navigator.geolocation.watchPosition(pos=>{
+    const {latitude:lat,longitude:lng} = pos.coords;
+    const prev = G.myPos ? {...G.myPos} : null;
+    G.myPos = {lat,lng};
+
+    // My marker
+    const color = G.role==='seeker'?'#ff3c5c':'#40c4ff';
+    const icon = mkIcon(G.playerPhoto, color, true, false);
+    if (!G.myMarker) {
+      G.myMarker = L.marker([lat,lng],{icon,zIndexOffset:1000}).addTo(G.map);
+      G.myMarker.bindPopup(`<b>${esc(G.playerName)}</b><br><span style="font-size:11px;color:#9090a8">Du</span>`);
+      G.map.setView([lat,lng],15);
+    } else {
+      G.myMarker.setLatLng([lat,lng]);
+      G.myMarker.setIcon(icon);
+    }
+
+    // Movement check
+    const elapsed = (Date.now()-G.startTime)/1000;
+    if (G.role==='hider' && elapsed>G.settings.hideTime && prev) {
+      const moved = haversine(prev.lat,prev.lng,lat,lng);
+      if (moved>G.settings.moveLimit) triggerMoveAlarm();
+    }
+
+    // Zone check
+    const dist = haversine(G.zoneCenter.lat,G.zoneCenter.lng,lat,lng);
+    if (dist>G.currentZoneRadius) handleZoneExit();
+    else if (zoneExitTm) { clearTimeout(zoneExitTm); zoneExitTm=null; }
+
+    // Push
+    const vis = G.role==='seeker'||G.infected;
+    fn().update(lRef(`players/${G.playerId}`),{
+      lat,lng,lastUpdate:Date.now(),lastPing:Date.now(),
+      visible:vis,outOfZone:dist>G.currentZoneRadius
+    }).catch(()=>{});
+
+  }, err=>{ if(err.code===1) toast('GPS-Zugriff verweigert!','error'); },
+  {enableHighAccuracy:true,maximumAge:2000,timeout:8000});
+}
+
+function handleZoneExit() {
+  if (zoneExitTm) return;
+  zoneExitTm = setTimeout(()=>{
+    fn().update(lRef(`players/${G.playerId}`),{visible:true}).catch(()=>{});
+    showAlert('⚠️ ZONE VERLASSEN!',2500);
+    toast('Du bist sichtbar auf der Karte!','error');
+    zoneExitTm=null;
+  }, G.settings.zoneWarn*1000);
+}
+
+function triggerMoveAlarm() {
+  if (movCooldown) return;
+  movCooldown = true;
+  fn().update(lRef(`players/${G.playerId}`),{visible:true}).catch(()=>{});
+  showAlert('🚨 BEWEGUNGSALARM! Radar entdeckt dich!',3000);
+  toast('Steh still — du wirst angezeigt!','error');
+  setTimeout(()=>{ movCooldown=false; },20000);
+}
+
+// ============================================================
+// GAME LISTENERS
+// ============================================================
+function startGameListeners() {
+  addListener(lRef('players'), snap=>{
+    const p = snap.val()||{};
+    updateMarkers(p);
+    checkRoleChange(p);
+  });
+  addListener(lRef('currentRadius'), snap=>{
+    const r=snap.val();
+    if(r&&G.zoneCircle){
+      G.currentZoneRadius=r;
+      G.zoneCircle.setRadius(r);
+      document.getElementById('hud-zone').textContent=`${Math.round(r)}m`;
+    }
+  });
+  addListener(lRef('status'), snap=>{
+    if(snap.val()==='ended'&&!G.gameEndGuard){G.gameEndGuard=true;G.gameActive=false;setTimeout(doGameOver,400);}
+  });
+  addListener(lRef('chat'), snap=>{
+    const msgs = snap.val()?Object.values(snap.val()):[];
+    renderChat(msgs);
+  });
+}
+
+function updateMarkers(players) {
+  Object.values(players).forEach((p,i)=>{
+    if (p.id===G.playerId||!p.lat||!p.lng) return;
+    const iAmSeeker = G.role==='seeker';
+    const theySeeker = p.role==='seeker';
+    const show = iAmSeeker?(theySeeker||p.visible):true;
+    const color = theySeeker?'#ff3c5c':COLORS[(i%(COLORS.length-1))+1];
+    const radar = !theySeeker&&p.visible;
+
+    if (!show) {
+      if(G.playerMarkers[p.id]){try{G.map.removeLayer(G.playerMarkers[p.id]);}catch(e){}delete G.playerMarkers[p.id];}
+      return;
+    }
+    const icon = mkIcon(p.photo,color,false,radar);
+    if (!G.playerMarkers[p.id]) {
+      const m = L.marker([p.lat,p.lng],{icon}).addTo(G.map);
+      const role = theySeeker?'🔍 Fänger':(p.visible?'⚠️ Entdeckt!':'🕵️ Verstecker');
+      m.bindPopup(`<b>${esc(p.name)}</b><br><span style="font-size:11px">${role}</span>`);
+      G.playerMarkers[p.id]=m;
+    } else {
+      G.playerMarkers[p.id].setLatLng([p.lat,p.lng]);
+      const wasRadar = G.visibleSet.has(p.id);
+      if(wasRadar!==radar) G.playerMarkers[p.id].setIcon(icon);
+    }
+    radar?G.visibleSet.add(p.id):G.visibleSet.delete(p.id);
+  });
+
+  Object.keys(G.playerMarkers).forEach(id=>{
+    if(!players[id]){try{G.map.removeLayer(G.playerMarkers[id]);}catch(e){}delete G.playerMarkers[id];}
+  });
+}
+
+function checkRoleChange(players) {
+  const me = players[G.playerId]; if(!me) return;
+  if(me.role==='seeker'&&G.role==='hider'){
+    G.role='seeker'; G.infected=true;
+    triggerInfection(); updateHUD();
+  }
+}
+
+// ============================================================
+// HIDE PHASE
+// ============================================================
+function startHidePhase() {
+  clearInterval(G.hideIv);
+  const hideDur = G.settings.hideTime;
+  const elapsed = (Date.now()-G.startTime)/1000;
+  let remaining = Math.max(0, hideDur-elapsed);
+  if(remaining<=0){endHidePhase();return;}
+
+  if(G.role==='hider') document.getElementById('hide-banner').classList.add('show');
+  else document.getElementById('seeker-lock').classList.add('show');
+
+  G.hideIv = setInterval(()=>{
+    remaining = Math.max(0, hideDur-(Date.now()-G.startTime)/1000);
+    const s = Math.ceil(remaining);
+    document.getElementById('hide-count').textContent=s;
+    document.getElementById('sl-timer').textContent=s;
+    if(remaining<=0){clearInterval(G.hideIv);endHidePhase();}
+  }, 400);
+}
+
+function endHidePhase() {
+  document.getElementById('hide-banner').classList.remove('show');
+  document.getElementById('seeker-lock').classList.remove('show');
+  if(G.role==='seeker') showAlert('🏁 DIE JAGD BEGINNT!',3000);
+  else showAlert('⚠️ JAGD GESTARTET! Bleib still!',3000);
+}
+
+// ============================================================
+// TIMERS
+// ============================================================
+function startTimers() {
+  clearInterval(G.timerIv); clearInterval(G.zoneIv);
+
+  G.timerIv = setInterval(()=>{
+    if(!G.gameActive) return;
+    const rem = Math.max(0, G.settings.duration*60*1000-(Date.now()-G.startTime));
+    const el = document.getElementById('hud-timer');
+    el.textContent = fmtTime(rem/1000);
+    el.className = `timer-val${rem<60000?' danger':''}`;
+    if(rem<=0&&G.isHost&&!G.gameEndGuard){G.gameEndGuard=true;endGame(true);}
+  },500);
+
+  G.zoneIv = setInterval(()=>{
+    if(!G.gameActive||!G.isHost) return;
+    const prog = Math.min(1,(Date.now()-G.startTime)/(G.settings.duration*60000));
+    const min = Math.max(50,G.settings.radius*.08);
+    const nr = Math.round(G.settings.radius-(G.settings.radius-min)*prog);
+    if(Math.abs(nr-G.currentZoneRadius)>4){
+      G.currentZoneRadius=nr;
+      fn().update(lRef(),{currentRadius:nr}).catch(()=>{});
+    }
+  },8000);
+}
+
+// ============================================================
+// HUD
+// ============================================================
+function updateHUD() {
+  const rb = document.getElementById('hud-role-badge');
+  rb.innerHTML = G.role==='seeker'
+    ? `<div style="font-family:var(--font-d);font-size:10px;letter-spacing:1.5px;color:var(--accent)">🔍 FÄNGER</div>`
+    : `<div style="font-family:var(--font-d);font-size:10px;letter-spacing:1.5px;color:var(--blue)">🕵️ VERSTECKER</div>`;
+
+  const st = document.getElementById('hud-my-status');
+  st.innerHTML = G.role==='seeker'
+    ? `Du bist <b style="color:var(--accent)">Fänger</b> — finde & infiziere alle Verstecker!`
+    : `Du bist <b style="color:var(--blue)">Verstecker</b> — versteck dich & bleib still!`;
+
+  document.getElementById('btn-caught').style.display = G.role==='hider'?'flex':'none';
+  document.getElementById('btn-found').style.display = G.role==='seeker'?'flex':'none';
+  document.getElementById('host-game-controls').style.display = G.isHost?'block':'none';
+  document.getElementById('hud-zone').textContent = `${Math.round(G.currentZoneRadius)}m`;
+}
+
+// ============================================================
+// CAUGHT / FOUND
+// ============================================================
+function showCaughtModal() {
+  const m = document.createElement('div');
+  m.className='modal-overlay'; m.id='caught-modal';
+  m.innerHTML=`<div class="modal-box">
+    <div class="modal-icon">🚨</div>
+    <div class="modal-title">GEFUNDEN?</div>
+    <div class="modal-sub">Wurde dein Fahrzeug vom Fänger entdeckt? Du wirst sofort zum Fänger!</div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" style="flex:1" onclick="this.closest('.modal-overlay').remove()">NEIN</button>
+      <button class="btn btn-danger" style="flex:1" onclick="this.closest('.modal-overlay').remove();becomeSeeker()">JA!</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+function confirmFound() { toast('Lass den Verstecker auf "Gefangen!" tippen!','info'); }
+
+async function becomeSeeker() {
+  try {
+    await fn().update(lRef(`players/${G.playerId}`),{role:'seeker',visible:true});
+    G.role='seeker'; G.infected=true;
+    triggerInfection(); updateHUD();
+  } catch(e){ toast('Fehler beim Rollenwechsel!','error'); }
+}
+
+function triggerInfection() {
+  const ov = document.getElementById('infected-overlay');
+  ov.style.display='block'; ov.style.animation='none';
+  void ov.offsetWidth;
+  ov.style.animation='infectFlash 1.5s ease-out forwards';
+  setTimeout(()=>ov.style.display='none',1600);
+  showAlert('😈 INFIZIERT! Du bist jetzt Fänger!',3500);
+  toast('Infiziert — du bist der Fänger!','error');
+  const el=(Date.now()-G.startTime)/1000;
+  if(el<G.settings.hideTime){
+    document.getElementById('seeker-lock').classList.add('show');
+    document.getElementById('hide-banner').classList.remove('show');
+  }
+}
+
+// ============================================================
+// CHAT
+// ============================================================
+let chatStartY=0, chatDragging=false;
+
+function toggleChat() {
+  const p = document.getElementById('chat-panel');
+  G.chatOpen = !G.chatOpen;
+  if(G.chatOpen){
+    p.style.display='flex'; p.classList.add('open');
+    G.unreadChat=0; document.getElementById('chat-badge').style.display='none';
+    setTimeout(()=>{ const m=document.getElementById('chat-msgs'); m.scrollTop=m.scrollHeight; },120);
+  } else {
+    p.classList.remove('open');
+    setTimeout(()=>{ if(!G.chatOpen) p.style.display='none'; },350);
+  }
+}
+
+// Swipe down chat handle to close
+document.addEventListener('touchstart',e=>{
+  if(!G.chatOpen) return;
+  if(document.getElementById('chat-handle').contains(e.target)){
+    chatStartY=e.touches[0].clientY; chatDragging=true;
+  }
+},{passive:true});
+document.addEventListener('touchend',e=>{
+  if(!chatDragging) return; chatDragging=false;
+  if(e.changedTouches[0].clientY-chatStartY>55) toggleChat();
+},{passive:true});
+
+async function sendChat() {
+  const inp=document.getElementById('chat-inp'); const txt=inp.value.trim(); if(!txt) return;
+  inp.value='';
+  try { await fn().push(lRef('chat'),{playerId:G.playerId,name:G.playerName,photo:G.playerPhoto||null,text:esc(txt),ts:Date.now()}); }
+  catch(e){}
+}
+
+function renderChat(msgs) {
+  msgs.sort((a,b)=>a.ts-b.ts);
+  const c=document.getElementById('chat-msgs');
+  const atBottom = c.scrollHeight-c.scrollTop-c.clientHeight<60;
+  c.innerHTML=msgs.map(m=>{
+    const me=m.playerId===G.playerId;
+    return `<div class="chat-msg${me?' own':''}">
+      <div class="cm-avatar">${m.photo?`<img src="${m.photo}" alt="">`:''}<span>${m.photo?'':'🚗'}</span></div>
+      <div class="cm-body">${!me?`<div class="cm-name">${esc(m.name||'?')}</div>`:''}<div class="cm-text">${m.text||''}</div></div>
+    </div>`;
+  }).join('');
+  if(atBottom) c.scrollTop=c.scrollHeight;
+  if(!G.chatOpen&&msgs.length>G.chatMsgs.length){
+    G.unreadChat+=msgs.length-G.chatMsgs.length;
+    const b=document.getElementById('chat-badge');
+    b.textContent=G.unreadChat>9?'9+':G.unreadChat; b.style.display='inline';
+  }
+  G.chatMsgs=[...msgs];
+}
+
+// ============================================================
+// ALERT
+// ============================================================
+function showAlert(txt,dur=2500) {
+  const el=document.getElementById('alert-banner');
+  el.textContent=txt; el.style.display='block'; el.style.animation='none';
+  void el.offsetWidth; el.style.animation='alertIn .3s ease-out';
+  clearTimeout(el._t); el._t=setTimeout(()=>el.style.display='none',dur);
+}
+
+// ============================================================
+// END GAME
+// ============================================================
+async function endGame(fromTimer=false) {
+  G.gameActive=false;
+  if(G.isHost){
+    try{ await fn().update(lRef(),{status:'ended'}); }catch(e){}
+  }
+  if(fromTimer||G.isHost) doGameOver();
+}
+
+async function doGameOver() {
+  G.gameActive=false;
+  clearInterval(G.timerIv); clearInterval(G.zoneIv); clearInterval(G.hideIv); clearInterval(G.pingIv);
+  if(G.watchId){navigator.geolocation.clearWatch(G.watchId);G.watchId=null;}
+  if(G.wakeLock){try{G.wakeLock.release();}catch(e){}G.wakeLock=null;}
+  clearListeners();
+
+  let players={};
+  try{ const s=await fn().get(lRef('players')); players=s.val()||{}; }catch(e){}
+
+  const all=Object.values(players);
+  const hiders=all.filter(p=>p.role==='hider');
+  const survived=hiders.length;
+
+  document.getElementById('go-icon').textContent=survived>0?'🏆':'💀';
+  document.getElementById('go-title').textContent=survived>0?'VERSTECKER GEWINNEN!':'FÄNGER GEWINNEN!';
+  document.getElementById('go-sub').textContent=survived>0
+    ?`${survived} Verstecker ${survived===1?'hat':'haben'} überlebt!`
+    :`Alle Verstecker wurden infiziert!`;
+
+  const gs=document.getElementById('go-stats');
+  gs.innerHTML=all.sort((a,b)=>a.role==='hider'?-1:1).map((p,i)=>{
+    const color=COLORS[i%COLORS.length];
+    return `<div class="player-item">
+      <div class="p-avatar" style="border-color:${color}">${p.photo?`<img src="${p.photo}" alt="">`:
+        `<span style="font-size:19px">🚗</span>`}</div>
+      <div class="p-info">
+        <div class="p-name">${esc(p.name)}${p.id===G.playerId?' <span style="color:var(--text3);font-size:10px">(Du)</span>':''}</div>
+        <div class="p-role"><span class="rbadge ${p.role==='seeker'?'rb-seeker':'rb-hider'}">${p.role==='seeker'?'FÄNGER':'✓ ÜBERLEBT'}</span></div>
+      </div>
+      <span style="font-size:20px">${p.role==='hider'?'🏆':'🔍'}</span>
+    </div>`;
+  }).join('');
+
+  showScreen('screen-gameover');
+}
+
+// ============================================================
+// RESET
+// ============================================================
+function resetGame() {
+  G.gameActive=false; G.gameEndGuard=false;
+  G.lobbyCode=null; G.isHost=false; G.role=null;
+  G.myPos=null; G.playerMarkers={}; G.markerData={};
+  G.chatMsgs=[]; G.unreadChat=0; G.infected=false;
+  G.visibleSet=new Set();
+  clearInterval(G.timerIv); clearInterval(G.zoneIv); clearInterval(G.hideIv); clearInterval(G.pingIv);
+  if(G.watchId){navigator.geolocation.clearWatch(G.watchId);G.watchId=null;}
+  if(G.wakeLock){try{G.wakeLock.release();}catch(e){}G.wakeLock=null;}
+  if(G.map){try{G.map.remove();}catch(e){}G.map=null;}
+  G.myMarker=null; G.zoneCircle=null; G.zoneOuter=null;
+  G.tileDark=null; G.tileLight=null;
+  clearListeners();
+  zoneExitTm=null; movCooldown=false;
+}
+
+// ============================================================
+// INIT
+// ============================================================
+window.addEventListener('firebase-ready',()=>{
+  console.log('✅ Firebase verbunden');
+  showLoad(false);
+});
+
+window.addEventListener('firebase-error',()=>{
+  showLoad(false);
+  toast('⚠️ Firebase Config fehlt! Bitte eintragen.','error');
+});
+
+// iOS install hint
+if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.navigator.standalone) {
+  document.getElementById('install-hint').style.display='flex';
+}
+
+// Early GPS permission request
+if(navigator.geolocation) navigator.geolocation.getCurrentPosition(()=>{},()=>{},{timeout:3000});
+
+// Wake lock re-acquire
+document.addEventListener('visibilitychange',async()=>{
+  if(!document.hidden&&G.gameActive&&navigator.wakeLock&&!G.wakeLock){
+    try{G.wakeLock=await navigator.wakeLock.request('screen');}catch(e){}
+  }
+});
+
+// Back button guard
+window.addEventListener('popstate',()=>{
+  if(G.gameActive){ if(confirm('Spiel verlassen?')){ endGame(); setTimeout(()=>{resetGame();showScreen('screen-home');},600); } }
+  else history.pushState(null,'',location.href);
+});
+history.pushState(null,'',location.href);
+
+// Firebase timeout fallback
+setTimeout(()=>{
+  if(!window._firebaseReady){
+    showLoad(false);
+    toast('⚠️ Firebase nicht erreichbar. Config prüfen!','error');
+  }
+},5000);
+</script>
+</body>
+</html>
